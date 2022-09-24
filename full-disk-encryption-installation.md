@@ -6,8 +6,6 @@ Following the main installation are further instructions to harden against Evil 
 ## Preface
 You will find most of this information pulled from the [Arch Wiki](https://wiki.archlinux.org/index.php/Dm-crypt/Encrypting_an_entire_system#Encrypted_boot_partition_(GRUB)) and other resources linked thereof.
 
-*Note:* The system was installed on an NVMe SSD, substitute ```/dev/nvme0nX``` with ```/dev/sdX``` or your device as needed.
-
 ## Pre-installation
 ### Connect to the internet
 Plug in your Ethernet and go, or for wireless consult the all-knowing [Arch Wiki](https://wiki.archlinux.org/index.php/installation_guide#Connect_to_the_internet).
@@ -27,7 +25,7 @@ Number | Start (sector) | End (sector) |    Size    | Code |        Name        
    2   |   4096         |   1130495    | 550.0 MiB  | EF00 | EFI System          |
    3   |   1130496      |   976773134  | 465.2 GiB  | 8309 | Linux LUKS          |
 
-```gdisk /dev/nvme0n1```
+```gdisk /dev/sda```
 ```
 o
 n
@@ -49,11 +47,11 @@ w
 ```
 
 #### Create the LUKS1 encrypted container on the Linux LUKS partition (GRUB does not support LUKS2 as of May 2019)
-```cryptsetup luksFormat --type luks1 --use-random -S 1 -s 512 -h sha512 -i 5000 /dev/nvme0n1p3```
+```cryptsetup luksFormat --type luks1 --use-random -S 1 -s 512 -h sha512 -i 5000 /dev/sda3```
 
 #### Open the container (decrypt it and make available at /dev/mapper/cryptlvm)
 ```
-cryptsetup open /dev/nvme0n1p3 cryptlvm
+cryptsetup open /dev/sda3 cryptlvm
 ```
 
 ### Preparing the logical volumes
@@ -94,19 +92,19 @@ swapon /dev/vg/swap
 ### Preparing the EFI partition
 #### Create FAT32 filesystem on the EFI system partition
 ```
-mkfs.fat -F32 /dev/nvme0n1p2
+mkfs.fat -F32 /dev/sda2
 ```
 
 #### Create mountpoint for EFI system partition at /efi for compatibility with grub-install and mount it
 ```
 mkdir /mnt/efi
-mount /dev/nvme0n1p2 /mnt/efi
+mount /dev/sda2 /mnt/efi
 ```
 
 ## Installation
 ### Install necessary packages
 ```
-pacstrap /mnt base linux linux-firmware mkinitcpio lvm2 vi dhcpcd wpa_supplicant
+pacstrap /mnt base linux linux-firmware mkinitcpio lvm2 vim dhcpcd wpa_supplicant sudo
 ```
 
 ## Configure the system
@@ -137,10 +135,10 @@ arch-chroot /mnt
 
 NAME           | MAJ:MIN | RM  |  SIZE  | RO  | TYPE  | MOUNTPOINT |
 ---------------|---------|-----|--------|-----|-------|------------|
-nvme0n1        |  259:0  |  0  | 465.8G |  0  | disk  |            |
-├─nvme0n1p1    |  259:4  |  0  |     1M |  0  | part  |            |
-├─nvme0n1p2    |  259:5  |  0  |   550M |  0  | part  | /efi       |
-├─nvme0n1p3    |  259:6  |  0  | 465.2G |  0  | part  |            |
+sda            |  259:0  |  0  | 465.8G |  0  | disk  |            |
+├─sda1         |  259:4  |  0  |     1M |  0  | part  |            |
+├─sda2         |  259:5  |  0  |   550M |  0  | part  | /efi       |
+├─sda3         |  259:6  |  0  | 465.2G |  0  | part  |            |
 ..└─cryptlvm   |  254:0  |  0  | 465.2G |  0  | crypt |            |
 ....├─vg-swap  |  254:1  |  0  |     8G |  0  | lvm   | [SWAP]     |
 ....├─vg-root  |  254:2  |  0  |    32G |  0  | lvm   | /          |
@@ -148,9 +146,9 @@ nvme0n1        |  259:0  |  0  | 465.8G |  0  | disk  |            |
 
 ### Time zone
 #### Set the time zone
-Replace `America/Los_Angeles` with your respective timezone found in `/usr/share/zoneinfo`
+Replace `Europe/Paris` with your respective timezone found in `/usr/share/zoneinfo`
 ```
-ln -sf /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
+ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
 ```
 
 #### Run `hwclock` to generate ```/etc/adjtime```
@@ -206,6 +204,24 @@ mkinitcpio -p linux
 passwd
 ```
 
+### User Management
+#### Create user with personal $HOME directory
+```
+useradd -m $USERNAME
+```
+
+#### Change user password
+```
+passwd $USERNAME
+```
+
+#### Add user to SUDO group
+Add user to group ```wheel``` by running ```usermod -aG $GROUPS $USERNAME``` and then run
+```
+$EDITOR=vim visudo
+```
+and uncomment ```#%wheel```.
+
 ### Boot loader
 #### Install GRUB
 ```
@@ -222,7 +238,7 @@ GRUB_ENABLE_CRYPTODISK=y
 ##### UUID is the partition containing the LUKS container
 ```blkid```
 ```
-/dev/nvme0n1p3: UUID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" TYPE="crypto_LUKS" PARTLABEL="Linux LUKS" PARTUUID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+/dev/sda3: UUID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" TYPE="crypto_LUKS" PARTLABEL="Linux LUKS" PARTUUID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
 ```/etc/default/grub```
@@ -241,7 +257,10 @@ grub-install --target=x86_64-efi --efi-directory=/efi
 ```
 pacman -S intel-ucode
 ```
-
+or
+```
+pacman -S amd-ucode
+```
 Use intel-ucode for Intel CPUs and amd-ucode for AMD CPUs.
 
 #### Generate GRUB's configuration file
